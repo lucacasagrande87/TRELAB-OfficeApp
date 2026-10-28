@@ -1,0 +1,4 @@
+# Mai pubblicare dati: niente archivi, esportazioni o fogli
+*.json
+*.csv
+*.xlsx
