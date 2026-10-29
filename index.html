@@ -288,6 +288,17 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .lines-head+.lines li{}
 @media (max-width:520px){.lines li{grid-template-columns:minmax(0,1fr) auto}.lines .q{grid-column:1;text-align:left}.lines .sub{grid-column:1}.lines .rm{grid-column:2;grid-row:1/span 3}}
 .recent .grp{font-size:.8rem;color:var(--muted)}
+/* importazione clienti da Excel */
+.xi-map{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 14px}
+.xi-map label{display:flex;flex-direction:column;gap:4px;font-size:.78rem;font-weight:600;color:var(--muted)}
+.xi-map select{min-height:36px;padding:6px 8px;font-size:.88rem}
+.xi-sum{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 10px}
+.xi-sum span{border-radius:999px;padding:3px 12px;font-size:.82rem;font-weight:650;background:var(--surface-2);border:1px solid var(--line)}
+.xi-sum .new{background:var(--done-soft);color:var(--done);border-color:transparent}
+.xi-sum .old{background:var(--due-soft);color:var(--due);border-color:transparent}
+#xi-prev .tbl{min-width:560px;font-size:.86rem}
+#xi-prev .tbl td,#xi-prev .tbl th{padding:6px 10px}
+@media (max-width:640px){.xi-map{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 /* accesso Firebase */
 #fb-login{position:fixed;inset:0;z-index:40;background:var(--bg);display:grid;place-items:center;padding:16px}
@@ -420,12 +431,23 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
         <div class="card list-pane">
           <div class="list-head"><input id="a-search" type="search" placeholder="Cerca" aria-label="Cerca"><button class="btn primary needs-write" id="a-new" type="button">Nuovo</button></div>
           <div class="sortrow" id="a-sort"><span class="hint">Ordina per</span><div class="seg" role="group" aria-label="Ordina clienti"><button type="button" data-o="nome" aria-pressed="true">Nome</button><button type="button" data-o="codice" aria-pressed="false">Codice</button></div></div>
+          <button class="btn ghost small" type="button" id="a-xls">Importa clienti da Excel</button>
           <div class="flagrow" id="a-flags" role="group" aria-label="Stato clienti"><label class="check"><input type="checkbox" data-st="act" checked> Attivi <span class="cnt"></span></label><label class="check"><input type="checkbox" data-st="inact"> Inattivi <span class="cnt"></span></label></div>
           <ul class="list" id="a-list"></ul>
         </div>
         <div class="card detail" id="a-editor"></div>
       </div>
-      <div class="card form" id="a-arch" hidden style="max-width:720px">
+      <div class="card form" id="a-arch" hidden style="max-width:860px">
+        <div><h2>Importa clienti da Excel</h2><p class="hint" style="margin-top:6px">File .xlsx o .csv con una riga di intestazione (es. l'elenco clienti esportato dal gestionale). I clienti già presenti non vengono sovrascritti.</p></div>
+        <input type="file" id="xi-file" accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv">
+        <p class="err" id="xi-err" role="alert" hidden></p>
+        <div id="xi-box" hidden>
+          <div class="xi-map" id="xi-map"></div>
+          <div id="xi-prev"></div>
+          <label class="check"><input type="checkbox" id="xi-fill"> Per i clienti già presenti, completa solo i campi che nell'app sono vuoti</label>
+          <div class="actions"><button class="btn primary needs-write" type="button" id="xi-imp" disabled>Importa clienti</button><span class="hint" id="xi-info"></span></div>
+        </div>
+        <hr style="border:0;border-top:1px solid var(--line);margin:4px 0">
         <div><h2>Copia di sicurezza</h2><p class="hint" style="margin-top:6px">Scarica in un file tutto l'archivio: clienti, servizi, operatori e rapportini. Conservalo in un posto sicuro (es. Google Drive) e rifallo ogni tanto.</p></div>
         <div class="actions"><button class="btn" type="button" id="arch-exp">Esporta archivio completo</button><span class="hint" id="arch-exp-info"></span></div>
         <hr style="border:0;border-top:1px solid var(--line);margin:4px 0">
@@ -1187,7 +1209,7 @@ function renderAnagList() {
   const src = kind === 'clienti' ? S.clienti : kind === 'servizi' ? S.servizi : S.operatori;
   $('a-sort').hidden = kind !== 'clienti'; renderSortSegs();
   let list = src.filter(x => !q || (x.nome || '').toLowerCase().includes(q) || (x.codice || '').toLowerCase().includes(q));
-  $('a-flags').hidden = kind !== 'clienti';
+  $('a-flags').hidden = kind !== 'clienti'; $('a-xls').hidden = kind !== 'clienti';
   if (kind === 'clienti') { renderFlags(); list = sortClients(list.filter(x => stateOk(x) || (S.editing && S.editing.id === x.id))); }
   $('a-new').textContent = kind === 'clienti' ? 'Nuovo cliente' : kind === 'servizi' ? 'Nuovo servizio' : 'Nuovo operatore';
   if (!list.length) {
@@ -1480,6 +1502,174 @@ $('arch-imp').addEventListener('click', async () => {
     toast('Archivio importato: ' + n + ' voci');
   } catch (err) { showErr('arch-err', 'Importate ' + n + ' voci su ' + tot + '. ' + writeError(err)); }
   S.archBusy = false; S.archArm = false; S.archData = null; $('arch-file').value = ''; $('arch-imp').textContent = 'Importa'; renderArch();
+});
+
+/* ---------- IMPORTA CLIENTI DA EXCEL (lettore .xlsx integrato, nessuna libreria esterna) ---------- */
+async function unzipEntries(buf) { // legge l'indice di un file zip e restituisce i file come testo, su richiesta
+  const dv = new DataView(buf), u8 = new Uint8Array(buf);
+  let e = buf.byteLength - 22; while (e >= 0 && dv.getUint32(e, true) !== 0x06054b50) e--;
+  if (e < 0) throw new Error('nonzip');
+  const n = dv.getUint16(e + 10, true); let p = dv.getUint32(e + 16, true); const files = {};
+  for (let i = 0; i < n; i++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    const meth = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), nl = dv.getUint16(p + 28, true), xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), off = dv.getUint32(p + 42, true);
+    const name = new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nl));
+    files[name] = {meth, csize, off}; p += 46 + nl + xl + cl;
+  }
+  return async name => {
+    const f = files[name]; if (!f) return null;
+    const start = f.off + 30 + dv.getUint16(f.off + 26, true) + dv.getUint16(f.off + 28, true), data = u8.subarray(start, start + f.csize);
+    if (f.meth === 0) return new TextDecoder().decode(data);
+    if (f.meth !== 8 || typeof DecompressionStream === 'undefined') throw new Error('zipmeth');
+    const ds = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return await new Response(ds).text();
+  };
+}
+async function readXlsx(buf) { // prima scheda del file -> righe di celle (testo)
+  const get = await unzipEntries(buf), xml = t => new DOMParser().parseFromString(t, 'application/xml');
+  const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+  let sheetPath = 'xl/worksheets/sheet1.xml';
+  try {
+    const wb = xml(await get('xl/workbook.xml')), first = wb.getElementsByTagNameNS(NS, 'sheet')[0];
+    const rid = first && (first.getAttribute('r:id') || first.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id'));
+    const rels = xml(await get('xl/_rels/workbook.xml.rels'));
+    for (const r of rels.getElementsByTagName('Relationship')) if (r.getAttribute('Id') === rid) { const t = r.getAttribute('Target'); sheetPath = t.startsWith('/') ? t.slice(1) : 'xl/' + t.replace(/^\.\//, ''); }
+  } catch (e) {}
+  const ssT = await get('xl/sharedStrings.xml'), shared = [];
+  if (ssT) for (const si of xml(ssT).getElementsByTagNameNS(NS, 'si')) shared.push([...si.getElementsByTagNameNS(NS, 't')].map(t => t.textContent).join(''));
+  const shT = await get(sheetPath); if (!shT) throw new Error('nosheet');
+  const colIdx = ref => { let n = 0; for (const ch of ref.replace(/\d+/g, '')) n = n * 26 + ch.charCodeAt(0) - 64; return n - 1; };
+  const rows = [];
+  for (const row of xml(shT).getElementsByTagNameNS(NS, 'row')) {
+    const out = [];
+    for (const c of row.getElementsByTagNameNS(NS, 'c')) {
+      const t = c.getAttribute('t'), v = c.getElementsByTagNameNS(NS, 'v')[0];
+      let val = '';
+      if (t === 's') val = shared[Number(v && v.textContent)] || '';
+      else if (t === 'inlineStr') val = [...c.getElementsByTagNameNS(NS, 't')].map(x => x.textContent).join('');
+      else if (v) val = v.textContent;
+      if (t === 'n' || (!t && v)) { const num = Number(val); if (isFinite(num) && String(num) !== val && Math.abs(num - Math.round(num)) < 1e-9) val = String(Math.round(num)); }
+      out[c.getAttribute('r') ? colIdx(c.getAttribute('r')) : out.length] = val;
+    }
+    rows.push(Array.from(out, x => x == null ? '' : String(x)));
+  }
+  return rows;
+}
+function readCsv(text) {
+  text = text.replace(/^﻿/, '');
+  const first = text.split(/\r?\n/)[0] || '', sep = (first.match(/;/g) || []).length >= (first.match(/,/g) || []).length ? ';' : (first.includes('\t') ? '\t' : ',');
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === sep) { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += ch;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+// campi dell'anagrafica e parole che li riconoscono nell'intestazione
+const XI_FIELDS = [
+  ['codice', 'Codice', /^(cod(ice)?\.?(\s*(cliente|cli\.?))?|id\s*cliente)$/],
+  ['nome', 'Ragione sociale *', /denominaz|ragione\s*soc|cognome|nominativ|^nome|^cliente$|intestaz/],
+  ['comune', 'Comune', /comune|citt|localit/],
+  ['cf', 'Codice fiscale', /fiscale|^c\.?\s?f\.?$/],
+  ['piva', 'Partita IVA', /partita|p\.?\s?iva|^iva$/],
+  ['referente', 'Referente', /referent|contatto|persona/],
+  ['tel', 'Telefono', /telef|^tel|cellul/],
+  ['email', 'Email', /mail|pec/],
+  ['note', 'Note', /^note|annotaz/]
+];
+S.xi = null;
+const xiNorm = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+const onlyZeros = v => /^0+$/.test(v);
+function xiGuess(head) {
+  const map = {}, used = new Set();
+  XI_FIELDS.forEach(([k, , re]) => { const i = head.findIndex((h, j) => !used.has(j) && re.test(xiNorm(h).toLowerCase())); if (i >= 0) { map[k] = i; used.add(i); } });
+  return map;
+}
+$('xi-file').addEventListener('change', async e => {
+  S.xi = null; $('xi-box').hidden = true; showErr('xi-err', ''); $('xi-info').textContent = '';
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  try {
+    let rows;
+    if (/\.xls$/i.test(f.name)) throw new Error('xls');
+    if (/\.xlsx$/i.test(f.name)) rows = await readXlsx(await f.arrayBuffer()); else rows = readCsv(await f.text());
+    rows = rows.map(r => r.map(xiNorm)).filter(r => r.some(Boolean));
+    if (!rows.length) throw new Error('vuoto');
+    // riga di intestazione: la prima (tra le prime 10) in cui si riconosce almeno un campo
+    let h = rows.slice(0, 10).findIndex(r => Object.keys(xiGuess(r)).length >= 2); if (h < 0) h = 0;
+    const head = rows[h], data = rows.slice(h + 1), width = Math.max(...rows.map(r => r.length));
+    S.xi = {name: f.name, head: Array.from({length: width}, (_, i) => head[i] || ('Colonna ' + (i + 1))), data, map: xiGuess(head)};
+    renderXi();
+  } catch (err) {
+    showErr('xi-err', err.message === 'xls' ? 'I file .xls (vecchio formato) non si possono leggere: aprilo in Excel e salvalo come .xlsx oppure CSV.' : err.message === 'vuoto' ? 'Il file non contiene righe.' : 'Non riesco a leggere il file. Usa un file Excel .xlsx oppure un CSV.');
+  }
+});
+// prepara l'importazione: nuovi, già presenti, scartati
+function xiPlan() {
+  const x = S.xi, m = x.map, cell = (r, k) => m[k] == null ? '' : xiNorm(r[m[k]]);
+  const digitCodes = S.clienti.map(c => c.codice || '').filter(c => /^\d+$/.test(c));
+  const lenCount = {}; digitCodes.forEach(c => { lenCount[c.length] = (lenCount[c.length] || 0) + 1; });
+  const padLen = Number(Object.keys(lenCount).sort((a, b) => lenCount[b] - lenCount[a])[0]) || 0;
+  const byCode = new Map(), byTax = new Map(), byName = new Map();
+  S.clienti.forEach(c => { if (c.codice) byCode.set(c.codice.toLowerCase(), c); [c.piva, c.cf].forEach(t => { if (t) byTax.set(t.toUpperCase(), c); }); byName.set((c.nome || '').toLowerCase(), c); });
+  const plan = {nuovi: [], presenti: [], scartati: 0, doppi: 0, padded: 0}, seen = new Set();
+  for (const r of x.data) {
+    const o = {}; XI_FIELDS.forEach(([k]) => { o[k] = cell(r, k); });
+    if (!o.nome) { plan.scartati++; continue; }
+    if (o.codice && padLen >= 4 && /^\d+$/.test(o.codice) && o.codice.length < padLen) { o.codice = o.codice.padStart(padLen, '0'); plan.padded++; }
+    ['cf', 'piva'].forEach(k => { if (onlyZeros(o[k])) o[k] = ''; o[k] = o[k].toUpperCase().replace(/\s/g, ''); });
+    const key = (o.codice || o.piva || o.cf || o.nome).toLowerCase();
+    if (seen.has(key)) { plan.doppi++; continue; } seen.add(key);
+    const ex = (o.codice && byCode.get(o.codice.toLowerCase())) || (!o.codice && ((o.piva && byTax.get(o.piva)) || (o.cf && byTax.get(o.cf)) || byName.get(o.nome.toLowerCase())));
+    if (ex) {
+      const patch = {}; XI_FIELDS.forEach(([k]) => { if (k !== 'codice' && k !== 'nome' && o[k] && !xiNorm(ex[k])) patch[k] = o[k]; });
+      plan.presenti.push({o, ex, patch});
+    } else plan.nuovi.push(o);
+  }
+  return plan;
+}
+function renderXi() {
+  const x = S.xi; $('xi-box').hidden = !x; if (!x) return;
+  const opts = sel => '<option value="">— non presente —</option>' + x.head.map((h, i) => '<option value="' + i + '"' + (sel === i ? ' selected' : '') + '>' + esc(h) + '</option>').join('');
+  $('xi-map').innerHTML = XI_FIELDS.map(([k, lbl]) => '<label>' + lbl + '<select data-k="' + k + '">' + opts(x.map[k]) + '</select></label>').join('');
+  const pl = xiPlan(), fill = $('xi-fill').checked, upd = pl.presenti.filter(p => Object.keys(p.patch).length).length;
+  x.plan = pl;
+  let h = '<div class="xi-sum"><span class="new">' + plural(pl.nuovi.length, 'cliente nuovo', 'clienti nuovi') + '</span><span class="old">' + plural(pl.presenti.length, 'già presente', 'già presenti') + (upd ? ' (' + upd + ' con campi da completare)' : '') + '</span>' +
+    (pl.scartati ? '<span>' + plural(pl.scartati, 'riga senza nome', 'righe senza nome') + ', scartate</span>' : '') + (pl.doppi ? '<span>' + plural(pl.doppi, 'doppione nel file', 'doppioni nel file') + '</span>' : '') +
+    (pl.padded ? '<span>' + plural(pl.padded, 'codice completato', 'codici completati') + ' con gli zeri iniziali</span>' : '') + '</div>';
+  if (x.map.nome == null) h += '<p class="err">Scegli quale colonna contiene la ragione sociale.</p>';
+  else if (pl.nuovi.length) h += '<p class="hint" style="margin-bottom:6px">Anteprima dei nuovi clienti' + (pl.nuovi.length > 8 ? ' (primi 8 di ' + pl.nuovi.length + ')' : '') + ':</p><div class="scroll"><table class="tbl"><thead><tr><th>Codice</th><th>Ragione sociale</th><th>Comune</th><th>P. IVA</th><th>C.F.</th></tr></thead><tbody>' +
+    pl.nuovi.slice(0, 8).map(o => '<tr><td class="num">' + esc(o.codice) + '</td><td>' + esc(o.nome) + '</td><td>' + esc(o.comune) + '</td><td class="num">' + esc(o.piva) + '</td><td class="num">' + esc(o.cf) + '</td></tr>').join('') + '</tbody></table></div>';
+  $('xi-prev').innerHTML = h;
+  const n = pl.nuovi.length + (fill ? upd : 0);
+  $('xi-imp').disabled = x.map.nome == null || !n;
+  $('xi-imp').textContent = n ? 'Importa ' + plural(pl.nuovi.length, 'cliente nuovo', 'clienti nuovi') + (fill && upd ? ' e completa ' + upd : '') : 'Niente da importare';
+}
+$('xi-map').addEventListener('change', e => { const sel = e.target.closest('select[data-k]'); if (!sel || !S.xi) return; if (sel.value === '') delete S.xi.map[sel.dataset.k]; else S.xi.map[sel.dataset.k] = Number(sel.value); renderXi(); });
+$('xi-fill').addEventListener('change', () => { if (S.xi) renderXi(); });
+$('a-xls').addEventListener('click', () => { S.aKind = 'archivio'; S.editing = null; renderAnag(); $('xi-file').focus(); });
+$('xi-imp').addEventListener('click', async () => {
+  if (!S.canWrite || !S.xi || !S.xi.plan || S.xiBusy) return;
+  const pl = S.xi.plan, fill = $('xi-fill').checked, upd = fill ? pl.presenti.filter(p => Object.keys(p.patch).length) : [], tot = pl.nuovi.length + upd.length;
+  S.xiBusy = true; $('xi-imp').disabled = true; let n = 0;
+  const ids = new Set(S.clienti.map(c => c.id)), now = new Date().toISOString();
+  try {
+    for (const o of pl.nuovi) {
+      const data = {nome: o.nome, codice: o.codice, comune: o.comune, cf: o.cf, piva: o.piva, referente: o.referente, tel: o.tel, email: o.email, note: o.note, tariffa: null, attivo: true, creato: now};
+      const id = o.codice ? 'c-' + o.codice.replace(/[^A-Za-z0-9_\-.~:@+]/g, '_') : '';
+      if (id && okId(id) && !ids.has(id)) { ids.add(id); await db.collection('clienti').doc(id).set(data); } else await db.collection('clienti').doc().set(data);
+      n++; if (n % 10 === 0) $('xi-info').textContent = 'Importazione in corso… ' + n + ' di ' + tot;
+    }
+    for (const p of upd) { await db.collection('clienti').doc(p.ex.id).update(p.patch); n++; }
+    toast('Clienti importati: ' + pl.nuovi.length + ' nuovi' + (upd.length ? ', ' + upd.length + ' completati' : ''));
+    $('xi-info').textContent = 'Fatto: ' + pl.nuovi.length + ' nuovi' + (upd.length ? ', ' + upd.length + ' completati' : '') + '.';
+    S.xi = null; $('xi-file').value = ''; $('xi-box').hidden = true; $('xi-fill').checked = false;
+  } catch (err) { showErr('xi-err', 'Importati ' + n + ' su ' + tot + '. ' + writeError(err)); }
+  S.xiBusy = false;
 });
 
 /* ---------- avvio ---------- */
