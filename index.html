@@ -273,6 +273,19 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .brand .logo{display:inline-block;height:30px;aspect-ratio:492/160;background:var(--logo);-webkit-mask:var(--logo-mask) center/contain no-repeat;mask:var(--logo-mask) center/contain no-repeat;flex:0 0 auto}
 .brand .app-name{font-weight:600;letter-spacing:-.01em;color:var(--ink)}
 .brand{gap:10px}
+/* elenco servizi del rapportino */
+.lines-head{display:flex;justify-content:space-between;gap:12px;font-size:.82rem;font-weight:600;color:var(--muted);margin-bottom:6px}
+.lines{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:10px;background:var(--surface-2)}
+.lines li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:2px 14px;align-items:center;padding:8px 8px 8px 12px;border-top:1px solid var(--line)}
+.lines li:first-child{border-top:0}
+.lines .nm{font-weight:600;overflow-wrap:anywhere}
+.lines .sub{grid-column:1;font-size:.8rem;color:var(--muted);overflow-wrap:anywhere}
+.lines .q{font-family:var(--f-num);font-size:.88rem;text-align:right;white-space:nowrap}
+.lines .rm{grid-row:1/span 2;grid-column:3;border:0;background:transparent;color:var(--muted);width:32px;height:32px;border-radius:8px;font-size:1.1rem;line-height:1}
+.lines .rm:hover{background:var(--danger-soft);color:var(--danger)}
+.lines-head+.lines li{}
+@media (max-width:520px){.lines li{grid-template-columns:minmax(0,1fr) auto}.lines .q{grid-column:1;text-align:left}.lines .sub{grid-column:1}.lines .rm{grid-column:2;grid-row:1/span 3}}
+.recent .grp{font-size:.8rem;color:var(--muted)}
 
 /* accesso Firebase */
 #fb-login{position:fixed;inset:0;z-index:40;background:var(--bg);display:grid;place-items:center;padding:16px}
@@ -328,12 +341,17 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
             <div class="field">
               <span>Quantità</span>
               <div class="qty">
-                <div class="seg" id="n-unit" role="group" aria-label="Unità"><button type="button" data-u="ore" aria-pressed="true">Ore</button><button type="button" data-u="numero" aria-pressed="false">Pezzi</button><button type="button" data-u="importo" aria-pressed="false">Importo €</button></div>
+                <div class="seg" id="n-unit" role="group" aria-label="Unità"><button type="button" data-u="ore" aria-pressed="true">Ore</button><button type="button" data-u="numero" aria-pressed="false">Unità</button><button type="button" data-u="importo" aria-pressed="false">Importo €</button></div>
                 <input id="n-qta" type="text" inputmode="decimal" placeholder="0,0" aria-label="Quantità">
               </div>
               <small class="hint" id="n-calc"></small>
             </div>
             <div class="field"><label for="n-note">Note (facoltative)</label><input id="n-note" type="text" maxlength="300"></div>
+          </div>
+          <div class="actions"><button class="btn small needs-write" type="button" id="n-add">+ Aggiungi servizio</button><span class="hint" id="n-add-hint">Per registrare più servizi nello stesso rapportino.</span></div>
+          <div id="n-lines" hidden>
+            <div class="lines-head"><span>Servizi del rapportino</span><span class="num" id="n-lines-tot"></span></div>
+            <ul class="lines" id="n-lines-ul"></ul>
           </div>
           <p class="err" id="n-err" role="alert" hidden></p>
           <div class="actions"><button class="btn primary needs-write" id="n-save" type="submit">Registra rapportino</button><span class="hint">Invio per salvare</span></div>
@@ -428,7 +446,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
     </div>
     <div class="row2"><div class="field"><label for="m-servizio">Servizio</label><select id="m-servizio"></select></div><div class="field"><label for="m-oper">Operatore</label><select id="m-oper"></select></div></div>
     <div class="row2">
-      <div class="field"><label for="m-unita">Unità</label><select id="m-unita"><option value="ore">Ore</option><option value="numero">Pezzi</option><option value="importo">Importo (€)</option></select></div>
+      <div class="field"><label for="m-unita">Unità</label><select id="m-unita"><option value="ore">Ore</option><option value="numero">Unità</option><option value="importo">Importo (€)</option></select></div>
       <div class="field"><label for="m-qta">Quantità</label><input id="m-qta" type="text" inputmode="decimal"></div>
     </div>
     <div class="field"><label for="m-note">Note</label><input id="m-note" type="text" maxlength="300"></div>
@@ -503,12 +521,12 @@ const sById = id => S.servizi.find(s => s.id === id);
 const oById = id => S.operatori.find(o => o.id === id);
 // chi ha svolto l'attività: l'operatore scelto; per i rapportini più vecchi, chi li ha inseriti
 const operName = (r, csv) => r.operatore || who(r.autore, csv);
-// a ore: la tariffa del cliente prevale; a pezzi: vale il prezzo di listino del servizio
+// a ore: la tariffa del cliente prevale; a unità: vale il prezzo di listino del servizio
 const rate = (c, s, u) => u === 'numero' ? (Number(s && s.tariffa) || null) : (Number(c && c.tariffa) || Number(s && s.tariffa) || null);
-const fmtPz = n => numFmt.format(n || 0) + ' pz';
+const fmtPz = n => numFmt.format(n || 0) + ' unità';
 const fmtQty = (r, dash) => r.unita === 'ore' ? fmtH(r.ore) : r.unita === 'numero' ? fmtPz(r.qta) : (dash ? '—' : fmtEur(r.importo));
-const unitLbl = u => u === 'ore' ? 'ore' : u === 'numero' ? 'pz' : '€';
-const svcSub = s => [s.codice, s.unita === 'ore' ? (s.tariffa ? eurFmt.format(s.tariffa) + '/h' : 'a ore') : s.unita === 'numero' ? (s.tariffa ? eurFmt.format(s.tariffa) + '/pz' : 'a pezzi, prezzo libero') : 'importo libero'].filter(Boolean).join(' · ');
+const unitLbl = u => u === 'ore' ? 'ore' : u === 'numero' ? 'unità' : '€';
+const svcSub = s => [s.codice, s.unita === 'ore' ? (s.tariffa ? eurFmt.format(s.tariffa) + '/h' : 'a ore') : s.unita === 'numero' ? (s.tariffa ? eurFmt.format(s.tariffa) + '/unità' : 'a unità, prezzo libero') : 'importo libero'].filter(Boolean).join(' · ');
 const isDue = r => r.stato !== 'fatturato';
 // fattura: numero e anno separati (per i dati vecchi l'anno si ricava da "124/2026" o dalla data)
 function invOf(r) {
@@ -608,7 +626,7 @@ function setUnit(u) {
 function updateCalc() {
   const h = $('n-calc'), c = cById(S.formClient), s = sById(S.formService), q = parseQty($('n-qta').value);
   if (S.unit === 'importo' || !s || (S.unit === 'ore' && !c)) { h.textContent = ''; return; }
-  const t = rate(c, s, S.unit), per = S.unit === 'ore' ? '/h' : '/pz', fq = S.unit === 'ore' ? fmtH : fmtPz;
+  const t = rate(c, s, S.unit), per = S.unit === 'ore' ? '/h' : '/unità', fq = S.unit === 'ore' ? fmtH : fmtPz;
   if (!t) h.textContent = S.unit === 'ore' ? 'Nessuna tariffa impostata: l\'importo resterà vuoto.' : 'Servizio senza prezzo di listino: scegli "Importo €" e scrivi l\'importo.';
   else if (!isNaN(q)) h.textContent = fq(q) + ' × ' + eurFmt.format(t) + per + ' = ' + eurFmt.format(round2(q * t));
   else h.textContent = (S.unit === 'ore' ? 'Tariffa applicata: ' : 'Prezzo di listino: ') + eurFmt.format(t) + per;
@@ -638,7 +656,7 @@ function pickService(id) {
   const s = sById(id); if (!s) return;
   S.formService = id;
   let u = s.unita === 'importo' ? 'importo' : s.unita === 'numero' ? 'numero' : 'ore';
-  if (u === 'numero' && !Number(s.tariffa)) u = 'importo'; // a pezzi senza prezzo: si scrive l'importo
+  if (u === 'numero' && !Number(s.tariffa)) u = 'importo'; // a unità senza prezzo: si scrive l'importo
   setUnit(u);
   if (u === 'numero' && !$('n-qta').value.trim()) $('n-qta').value = '1';
   $('n-serv').value = ''; renderSCombo(false);
@@ -725,6 +743,52 @@ nCli.addEventListener('keydown', e => {
 });
 $('n-list').addEventListener('mousedown', e => { const li = e.target.closest('li[data-id]'); if (li) { e.preventDefault(); pickClient(li.dataset.id, true); } });
 
+/* più servizi nello stesso rapportino: le righe restano nel modulo finché non si registra */
+S.lines = [];
+// legge il servizio in compilazione; null se il modulo servizio è vuoto
+function readPending() {
+  const s = sById(S.formService), qt = $('n-qta').value.trim(), q = parseQty(qt), note = $('n-note').value.trim();
+  if (!s && !qt) return null;
+  if (!s) return {err: 'Scegli un servizio.'};
+  if (isNaN(q)) return {err: S.unit === 'ore' ? 'Inserisci le ore lavorate (es. 1,5).' : S.unit === 'numero' ? 'Inserisci il numero di unità (es. 1).' : 'Inserisci l\'importo (es. 120).'};
+  if (S.unit === 'numero' && !rate(null, s, 'numero')) return {err: 'Questo servizio non ha un prezzo di listino: scegli "Importo €" e scrivi l\'importo.'};
+  return {line: {sid: s.id, unit: S.unit, q: round2(q), note}};
+}
+// importi della riga, calcolati con il cliente scelto (a ore la tariffa del cliente prevale)
+function lineCalc(l, c) {
+  const s = sById(l.sid), o = {ore: null, qta: null, tariffa: null, importo: null};
+  if (l.unit === 'ore') { o.ore = l.q; const t = rate(c, s, 'ore'); if (t) { o.tariffa = t; o.importo = round2(l.q * t); } }
+  else if (l.unit === 'numero') { o.qta = l.q; o.tariffa = rate(c, s, 'numero'); o.importo = o.tariffa ? round2(l.q * o.tariffa) : null; }
+  else o.importo = l.q;
+  return o;
+}
+function clearServiceInputs() { $('n-qta').value = ''; $('n-note').value = ''; S.formService = null; renderChips(); updateCalc(); }
+function focusService() { const first = $('n-servizi').querySelector('.chip'); if (!$('n-sbox').hidden) $('n-serv').focus(); else if (first) first.focus(); }
+function renderLines() {
+  const box = $('n-lines'), c = cById(S.formClient);
+  box.hidden = !S.lines.length;
+  $('n-save').textContent = S.lines.length ? 'Registra rapportino (' + plural(S.lines.length, 'servizio', 'servizi') + (readPendingQuiet() ? ' + quello in compilazione' : '') + ')' : 'Registra rapportino';
+  if (!S.lines.length) return;
+  let tot = 0, noImp = false;
+  $('n-lines-ul').innerHTML = S.lines.map((l, i) => {
+    const s = sById(l.sid) || {nome: '(servizio eliminato)'}, k = lineCalc(l, c);
+    if (k.importo == null) noImp = true; else tot += k.importo;
+    const q = l.unit === 'importo' ? eurFmt.format(l.q) : (l.unit === 'ore' ? fmtH(l.q) : fmtPz(l.q)) + (c && k.importo != null ? ' = ' + eurFmt.format(k.importo) : '');
+    return '<li><span class="nm">' + esc(s.nome) + '</span><span class="q">' + q + '</span><button type="button" class="rm" data-i="' + i + '" aria-label="Togli ' + esc(s.nome) + '" title="Togli dall\'elenco">×</button>' +
+      ((s.codice || l.note) ? '<span class="sub">' + esc([s.codice, l.note].filter(Boolean).join(' · ')) + '</span>' : '') + '</li>';
+  }).join('');
+  $('n-lines-tot').textContent = c ? 'Totale ' + eurFmt.format(round2(tot)) + (noImp ? ' + voci senza importo' : '') : '';
+}
+function readPendingQuiet() { const p = readPending(); return !!(p && p.line); }
+$('n-add').addEventListener('click', () => {
+  const p = readPending();
+  if (!p) { showErr('n-err', 'Scegli prima un servizio e la quantità, poi premi "Aggiungi servizio".'); return; }
+  if (p.err) { showErr('n-err', p.err); return; }
+  showErr('n-err', ''); S.lines.push(p.line); clearServiceInputs(); renderLines(); focusService();
+});
+$('n-lines-ul').addEventListener('click', e => { const b = e.target.closest('.rm'); if (!b) return; S.lines.splice(Number(b.dataset.i), 1); renderLines(); });
+$('n-qta').addEventListener('input', () => { if (S.lines.length) renderLines(); });
+
 $('f-new').addEventListener('submit', async e => {
   e.preventDefault(); if (!S.canWrite) return;
   resolveClientText();
@@ -733,27 +797,34 @@ $('f-new').addEventListener('submit', async e => {
   const op = oById(S.formOper);
   if (!op && S.operatori.some(o => o.attivo !== false)) { $('n-oper').focus(); return showErr('n-err', 'Scegli l\'operatore che ha svolto l\'attività.'); }
   if (!c) return showErr('n-err', 'Scegli un cliente dall\'elenco.');
-  if (!s) return showErr('n-err', 'Scegli un servizio.');
-  if (isNaN(q)) return showErr('n-err', S.unit === 'ore' ? 'Inserisci le ore lavorate (es. 1,5).' : S.unit === 'numero' ? 'Inserisci il numero di pezzi (es. 1).' : 'Inserisci l\'importo (es. 120).');
-  if (S.unit === 'numero' && !rate(c, s, 'numero')) return showErr('n-err', 'Questo servizio non ha un prezzo di listino: scegli "Importo €" e scrivi l\'importo.');
+  // righe da registrare: quelle già in elenco più il servizio in compilazione (se compilato)
+  const p = readPending();
+  if (p && p.err) return showErr('n-err', p.err);
+  const lines = S.lines.concat(p && p.line ? [p.line] : []);
+  if (!lines.length) return showErr('n-err', 'Scegli un servizio.');
   showErr('n-err', '');
-  const doc = {data, clienteId: c.id, servizioId: s.id, servizioNome: s.nome, servizioCodice: s.codice || '', operatoreId: op ? op.id : null, operatore: op ? op.nome : '', unita: S.unit, ore: null, qta: null, tariffa: null, importo: null,
-    note: $('n-note').value.trim(), stato: 'da_fatturare', fatturaNum: null, fatturaAnno: null, fatturaData: null, autore: S.meId, creato: new Date().toISOString()};
-  if (S.unit === 'ore') { doc.ore = round2(q); const t = rate(c, s, 'ore'); if (t) { doc.tariffa = t; doc.importo = round2(q * t); } }
-  else if (S.unit === 'numero') { doc.qta = round2(q); doc.tariffa = rate(c, s, 'numero'); doc.importo = round2(q * doc.tariffa); }
-  else doc.importo = round2(q);
-  const btn = $('n-save'); btn.disabled = true;
+  const gruppo = lines.length > 1 ? 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7) : null, t0 = Date.now();
+  const docs = lines.map((l, i) => {
+    const s = sById(l.sid);
+    return Object.assign({data, clienteId: c.id, servizioId: s.id, servizioNome: s.nome, servizioCodice: s.codice || '', operatoreId: op ? op.id : null, operatore: op ? op.nome : '', unita: l.unit},
+      lineCalc(l, c), {note: l.note, gruppoId: gruppo, stato: 'da_fatturare', fatturaNum: null, fatturaAnno: null, fatturaData: null, autore: S.meId, creato: new Date(t0 + i).toISOString()});
+  });
+  const btn = $('n-save'); btn.disabled = true; let saved = 0;
   try {
-    await db.collection('rapportini').doc().set(doc);
-    toast('Registrato: ' + c.nome + ' · ' + s.nome + ' · ' + (S.unit === 'importo' ? eurFmt.format(doc.importo) : fmtQty(doc) + (doc.importo != null ? ' = ' + eurFmt.format(doc.importo) : '')));
-    $('n-qta').value = ''; $('n-note').value = ''; S.formService = null; renderChips(); updateCalc(); renderSide();
-    const first = $('n-servizi').querySelector('.chip');
-    if (!$('n-sbox').hidden) $('n-serv').focus(); else if (first) first.focus();
-  } catch (err) { showErr('n-err', writeError(err)); }
-  btn.disabled = false;
+    for (const d of docs) { await db.collection('rapportini').doc().set(d); saved++; }
+    if (docs.length === 1) { const d = docs[0]; toast('Registrato: ' + c.nome + ' · ' + d.servizioNome + ' · ' + (d.unita === 'importo' ? eurFmt.format(d.importo) : fmtQty(d) + (d.importo != null ? ' = ' + eurFmt.format(d.importo) : ''))); }
+    else toast('Registrato: ' + c.nome + ' · ' + plural(docs.length, 'servizio', 'servizi') + ' · ' + eurFmt.format(round2(docs.reduce((a, d) => a + (d.importo || 0), 0))));
+    S.lines = []; clearServiceInputs(); renderSide(); focusService();
+  } catch (err) {
+    // tiene in elenco solo le righe non salvate, così si può riprovare senza doppioni
+    S.lines = lines.slice(saved); clearServiceInputs();
+    showErr('n-err', (saved ? 'Salvati ' + saved + ' servizi su ' + docs.length + '. ' : '') + writeError(err));
+  }
+  renderLines(); btn.disabled = false;
 });
 
 function renderSide() {
+  renderLines();
   const box = $('n-client'), c = cById(S.formClient);
   if (!c) {
     if (S.loaded.c && !S.clienti.length) {
@@ -765,7 +836,7 @@ function renderSide() {
   const kv = [['Codice', c.codice], ['Comune', c.comune], ['P. IVA', c.piva], ['Cod. fiscale', c.cf && c.cf !== c.piva ? c.cf : ''], ['Referente', c.referente], ['Telefono', c.tel], ['Email', c.email], ['Tariffa', c.tariffa ? eurFmt.format(c.tariffa) + '/h' : ''], ['Note', c.note]].filter(x => x[1]);
   box.innerHTML = '<h3>' + esc(c.nome) + '</h3>' +
     (kv.length ? '<dl class="kv">' + kv.map(x => '<dt>' + x[0] + '</dt><dd>' + esc(x[1]) + '</dd>').join('') + '</dl>' : '<div style="height:12px"></div>') +
-    '<div class="due-line"><span>Da fatturare</span><span class="num">' + (t.n ? plural(t.n, 'rapportino', 'rapportini') + ' · ' + fmtH(t.ore) + ' · ' + fmtEur(t.imp) : 'nulla') + '</span></div>' +
+    '<div class="due-line"><span>Da fatturare</span><span class="num">' + (t.n ? plural(t.n, 'voce', 'voci') + ' · ' + fmtH(t.ore) + ' · ' + fmtEur(t.imp) : 'nulla') + '</span></div>' +
     '<button class="btn ghost" type="button" data-act="open-scheda">Apri scheda cliente</button>';
 }
 $('n-client').addEventListener('click', e => {
@@ -776,12 +847,18 @@ $('n-client').addEventListener('click', e => {
 function renderRecent() {
   const ul = $('n-recent');
   if (!S.loaded.r) { ul.innerHTML = '<li class="hint">Caricamento…</li>'; return; }
-  const rows = S.rapportini.slice().sort((a, b) => (b.creato || '').localeCompare(a.creato || '')).slice(0, 6);
-  if (!rows.length) { ul.innerHTML = '<li class="hint">Nessun rapportino registrato.</li>'; return; }
-  ul.innerHTML = rows.map(r => {
-    const c = cById(r.clienteId);
-    const q = fmtQty(r);
-    return '<li><div><b>' + esc(c ? c.nome : 'Cliente eliminato') + '</b> · ' + esc(r.servizioNome) + '</div><div class="m">' + fmtDate(r.data) + ' · <span class="num">' + q + '</span> · ' + esc(operName(r)) + '</div></li>';
+  const sorted = S.rapportini.slice().sort((a, b) => (b.creato || '').localeCompare(a.creato || ''));
+  if (!sorted.length) { ul.innerHTML = '<li class="hint">Nessun rapportino registrato.</li>'; return; }
+  const groups = [];
+  for (const r of sorted) {
+    const last = groups[groups.length - 1];
+    if (r.gruppoId && last && last[0].gruppoId === r.gruppoId) last.push(r); else { if (groups.length === 6) break; groups.push([r]); }
+  }
+  ul.innerHTML = groups.map(g => {
+    const r = g[0], c = cById(r.clienteId);
+    if (g.length === 1) return '<li><div><b>' + esc(c ? c.nome : 'Cliente eliminato') + '</b> · ' + esc(r.servizioNome) + '</div><div class="m">' + fmtDate(r.data) + ' · <span class="num">' + fmtQty(r) + '</span> · ' + esc(operName(r)) + '</div></li>';
+    const t = sums(g);
+    return '<li><div><b>' + esc(c ? c.nome : 'Cliente eliminato') + '</b> · ' + plural(g.length, 'servizio', 'servizi') + '</div><div class="grp">' + esc(g.map(x => x.servizioNome).reverse().join(' · ')) + '</div><div class="m">' + fmtDate(r.data) + ' · <span class="num">' + fmtEur(t.imp) + '</span> · ' + esc(operName(r)) + '</div></li>';
   }).join('');
 }
 
@@ -875,8 +952,8 @@ function renderScheda() {
   $('c-head').innerHTML =
     '<button class="back" type="button" data-act="back">← Clienti</button>' +
     '<div class="head-row"><div><h2>' + esc(c.nome) + '</h2><p class="meta">' + (meta || 'Nessun dato anagrafico') + (c.tariffa ? ' · ' + eurFmt.format(c.tariffa) + '/h' : '') + '</p>' + (c.note ? '<p class="meta">' + esc(c.note) + '</p>' : '') + '</div><button class="btn ghost small needs-write" type="button" data-act="edit-client">Modifica anagrafica</button></div>' +
-    '<div class="tiles"><div class="tile"><span class="lbl">Da fatturare</span><span class="big">' + fmtEur(sd.imp) + '</span><span class="sub">' + plural(sd.n, 'rapportino', 'rapportini') + ' · ' + fmtH(sd.ore) + (sd.noImp ? ' · ' + sd.noImp + ' senza importo' : '') + '</span></div>' +
-    '<div class="tile done"><span class="lbl">Fatturati</span><span class="big">' + fmtEur(sf.imp) + '</span><span class="sub">' + plural(sf.n, 'rapportino', 'rapportini') + ' · ' + fmtH(sf.ore) + '</span></div></div>' +
+    '<div class="tiles"><div class="tile"><span class="lbl">Da fatturare</span><span class="big">' + fmtEur(sd.imp) + '</span><span class="sub">' + plural(sd.n, 'voce', 'voci') + ' · ' + fmtH(sd.ore) + (sd.noImp ? ' · ' + sd.noImp + ' senza importo' : '') + '</span></div>' +
+    '<div class="tile done"><span class="lbl">Fatturati</span><span class="big">' + fmtEur(sf.imp) + '</span><span class="sub">' + plural(sf.n, 'voce', 'voci') + ' · ' + fmtH(sf.ore) + '</span></div></div>' +
     '<div class="trend"><div class="ch-head"><div><h3>Ultimi 12 mesi</h3><p class="hint" id="c-trend-sub"></p></div><div class="legend"><span><i style="background:var(--c-done)"></i>Fatturato</span><span><i style="background:var(--c-due)"></i>Da fatturare</span></div></div><div class="chart" id="c-trend"></div></div>';
   renderClientTrend(c);
   $('cnt-due').textContent = due.length; $('cnt-done').textContent = done.length; $('cnt-all').textContent = all.length;
@@ -973,7 +1050,7 @@ async function exportCsv(rows, name) {
   const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
   const n = v => v == null || v === '' ? '' : String(v).replace('.', ',');
   const lines = rows.map(r => { const c = cById(r.clienteId) || {}, s = sById(r.servizioId) || {};
-    return [fmtDate(r.data), c.codice || '', c.nome || '', r.servizioCodice || s.codice || '', r.servizioNome, r.unita === 'ore' ? n(r.ore) : r.unita === 'numero' ? n(r.qta) : '', r.unita === 'ore' ? 'ore' : r.unita === 'numero' ? 'pz' : '', n(r.tariffa), n(r.importo), r.note || '', isDue(r) ? 'Da fatturare' : 'Fatturato', isDue(r) ? '' : invOf(r).num, isDue(r) ? '' : invOf(r).anno, operName(r, true)].map(q).join(';'); });
+    return [fmtDate(r.data), c.codice || '', c.nome || '', r.servizioCodice || s.codice || '', r.servizioNome, r.unita === 'ore' ? n(r.ore) : r.unita === 'numero' ? n(r.qta) : '', r.unita === 'ore' ? 'ore' : r.unita === 'numero' ? 'unità' : '', n(r.tariffa), n(r.importo), r.note || '', isDue(r) ? 'Da fatturare' : 'Fatturato', isDue(r) ? '' : invOf(r).num, isDue(r) ? '' : invOf(r).anno, operName(r, true)].map(q).join(';'); });
   try { await dl.save({filename: name, data: '﻿' + [head.map(q).join(';')].concat(lines).join('\r\n')}); }
   catch (err) { if (!err || err.code !== 'declined') toast('Non riesco a salvare il file.', true); }
 }
@@ -1152,7 +1229,7 @@ function renderEditor() {
     const un = rec.unita === 'importo' || rec.unita === 'numero' ? rec.unita : 'ore';
     h += '<div class="field"><label for="f-nome">Descrizione del servizio *</label><input id="f-nome" value="' + v('nome') + '"></div>' +
       '<div class="row2"><div class="field"><label for="f-codice">Codice</label><input id="f-codice" value="' + v('codice') + '" placeholder="es. BIL"><small class="hint">Lo stesso del gestionale, per ritrovarlo in fattura.</small></div>' +
-      '<div class="field"><label for="f-unita">Si registra</label><select id="f-unita"><option value="ore"' + (un === 'ore' ? ' selected' : '') + '>A ore</option><option value="numero"' + (un === 'numero' ? ' selected' : '') + '>A pezzi (prezzo di listino)</option><option value="importo"' + (un === 'importo' ? ' selected' : '') + '>A importo libero</option></select></div></div>' +
+      '<div class="field"><label for="f-unita">Si registra</label><select id="f-unita"><option value="ore"' + (un === 'ore' ? ' selected' : '') + '>A ore</option><option value="numero"' + (un === 'numero' ? ' selected' : '') + '>A unità (prezzo di listino)</option><option value="importo"' + (un === 'importo' ? ' selected' : '') + '>A importo libero</option></select></div></div>' +
       '<div class="field" id="f-tar-box"' + (un === 'importo' ? ' hidden' : '') + '><label for="f-tariffa" id="f-tar-lbl">' + (un === 'numero' ? 'Prezzo unitario (€)' : 'Tariffa oraria (€/h)') + '</label><input id="f-tariffa" inputmode="decimal" value="' + v('tariffa') + '" placeholder="facoltativa"><small class="hint">IVA esclusa. Se manca, l\'importo si scrive a mano.</small></div>';
   }
   if (id) h += '<label class="check"><input type="checkbox" id="f-attivo"' + (rec.attivo !== false ? ' checked' : '') + '> ' + (kind === 'clienti' ? 'Cliente attivo' : kind === 'servizi' ? 'Servizio attivo (compare nell\'inserimento)' : 'Operatore attivo (compare nel menu)') + '</label>';
@@ -1297,15 +1374,15 @@ function renderRiep() {
   const prevLbl = (y - 1) + (y === curY ? ' allo stesso giorno' : '');
   const sAll = sums(S.rapportini.filter(isDue)), sY = sums(inY), sP = sums(prevRows), sF = sums(inY.filter(r => !isDue(r)));
   $('r-stats').innerHTML =
-    '<div class="stat due"><span class="lbl">Da fatturare oggi</span><span class="val">' + fmtEur(sAll.imp) + '</span><span class="sub">' + plural(sAll.n, 'rapportino', 'rapportini') + ' · ' + fmtH(sAll.ore) + (sAll.noImp ? ' · ' + sAll.noImp + ' senza importo' : '') + '</span></div>' +
+    '<div class="stat due"><span class="lbl">Da fatturare oggi</span><span class="val">' + fmtEur(sAll.imp) + '</span><span class="sub">' + plural(sAll.n, 'voce', 'voci') + ' · ' + fmtH(sAll.ore) + (sAll.noImp ? ' · ' + sAll.noImp + ' senza importo' : '') + '</span></div>' +
     '<div class="stat"><span class="lbl">Valore del lavoro ' + y + '</span><span class="val">' + fmtEur(sY.imp) + '</span><span class="sub">' + deltaHtml(sY.imp, sP.imp, prevLbl) + '</span></div>' +
     '<div class="stat"><span class="lbl">Ore lavorate ' + y + '</span><span class="val">' + fmtH(sY.ore) + '</span><span class="sub">' + deltaHtml(sY.ore, sP.ore, prevLbl) + '</span></div>' +
-    '<div class="stat"><span class="lbl">Fatturato ' + y + '</span><span class="val">' + fmtEur(sF.imp) + '</span><span class="sub">' + plural(sF.n, 'rapportino', 'rapportini') + ' su ' + sY.n + '</span></div>';
+    '<div class="stat"><span class="lbl">Fatturato ' + y + '</span><span class="val">' + fmtEur(sF.imp) + '</span><span class="sub">' + plural(sF.n, 'voce', 'voci') + ' su ' + sY.n + '</span></div>';
 
   // andamento mensile
   const keys = yearKeys(y), ag = monthAgg(inY, keys, m);
   $('r-m-title').textContent = (m === 'ore' ? 'Ore' : 'Importi') + ' mese per mese, ' + y;
-  $('r-m-sub').textContent = 'In base alla data del lavoro.' + (m === 'importo' && sY.noImp ? ' ' + plural(sY.noImp, 'rapportino', 'rapportini') + ' senza importo non sono conteggiati.' : '') + (m === 'ore' ? ' Solo i servizi registrati a ore.' : '');
+  $('r-m-sub').textContent = 'In base alla data del lavoro.' + (m === 'importo' && sY.noImp ? ' ' + plural(sY.noImp, 'voce', 'voci') + ' senza importo non conteggiate.' : '') + (m === 'ore' ? ' Solo i servizi registrati a ore.' : '');
   $('r-m-tab').textContent = S.mTable ? 'Grafico' : 'Tabella'; $('r-m-tab').setAttribute('aria-pressed', String(S.mTable));
   const o = {keys, due: ag.due, done: ag.done, measure: m, height: 240, label: $('r-m-title').textContent};
   if (S.mTable) $('r-month').innerHTML = colTable(o); else colChart($('r-month'), o);
