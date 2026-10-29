@@ -688,7 +688,9 @@ function renderSCombo(open) {
 S.sIdx = 0;
 const nSrv = $('n-serv');
 nSrv.addEventListener('input', () => { if (S.formService) { S.formService = null; nSrv.classList.remove('picked'); updateCalc(); renderLines(); } S.sIdx = 0; renderSCombo(true); });
-nSrv.addEventListener('focus', () => { S.sIdx = S.formService ? Math.max(0, sMatches().findIndex(x => x.id === S.formService)) : 0; renderSCombo(true); if (S.formService) setTimeout(() => nSrv.select(), 0); });
+function quietFocusServ() { S.sQuiet = true; nSrv.focus(); S.sQuiet = false; renderSCombo(false); }
+nSrv.addEventListener('mousedown', () => { if (document.activeElement === nSrv && $('n-slist').hidden) { S.sIdx = 0; renderSCombo(true); } });
+nSrv.addEventListener('focus', () => { if (S.sQuiet) return; S.sIdx = S.formService ? Math.max(0, sMatches().findIndex(x => x.id === S.formService)) : 0; renderSCombo(true); if (S.formService) setTimeout(() => nSrv.select(), 0); });
 nSrv.addEventListener('blur', () => setTimeout(() => { if (document.activeElement === nSrv) return; renderSCombo(false); renderChips(); }, 120));
 nSrv.addEventListener('keydown', e => {
   const open = !$('n-slist').hidden, m = sMatches(), n = Math.max(m.length, 1);
@@ -731,7 +733,7 @@ function pickClient(id, focusNext) {
   S.formClient = id; $('n-cliente').value = c.nome; renderCombo(false); renderSide(); updateCalc();
   if (focusNext) {
     const first = $('n-servizi').querySelector('.chip[aria-checked="true"]') || $('n-servizi').querySelector('.chip');
-    if (!$('n-sbox').hidden && !S.formService) $('n-serv').focus(); else if (first) first.focus();
+    if (!$('n-sbox').hidden && !S.formService) quietFocusServ(); else if (first) first.focus();
   }
 }
 function resolveClientText() {
@@ -773,7 +775,7 @@ function lineCalc(l, c) {
   return o;
 }
 function clearServiceInputs() { $('n-qta').value = ''; $('n-note').value = ''; S.formService = null; $('n-serv').value = ''; $('n-serv').classList.remove('picked'); renderChips(); updateCalc(); }
-function focusService() { const first = $('n-servizi').querySelector('.chip'); if (!$('n-sbox').hidden) $('n-serv').focus(); else if (first) first.focus(); }
+function focusService() { const first = $('n-servizi').querySelector('.chip'); if (!$('n-sbox').hidden) quietFocusServ(); else if (first) first.focus(); }
 function renderLines() {
   const box = $('n-lines'), c = cById(S.formClient);
   box.hidden = !S.lines.length;
