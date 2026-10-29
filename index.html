@@ -112,7 +112,9 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .chip .cn{max-width:260px;min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chip small{flex:0 0 auto}
 .chips-lbl{font-size:.78rem;color:var(--muted);align-self:center;margin-right:2px}
-#n-sbox{margin-bottom:8px}
+#n-sbox{margin-bottom:0}
+#n-serv.picked{border-color:var(--accent);background:var(--accent-soft);font-weight:600}
+.combo-list li.hdr{font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);cursor:default;padding:10px 10px 4px;background:transparent}
 .combo-list li span{min-width:0;overflow-wrap:anywhere}
 .combo-list li small{white-space:nowrap}
 
@@ -643,14 +645,15 @@ function renderChips() {
   if (!S.loaded.s) { box.innerHTML = '<span class="hint">Caricamento…</span>'; return; }
   const all = S.servizi.filter(s => s.attivo !== false);
   if (!all.length) { $('n-sbox').hidden = true; box.innerHTML = '<span class="hint">Nessun servizio. Aggiungili nella sezione Anagrafiche.</span>'; return; }
-  const many = all.length > MANY;
-  $('n-sbox').hidden = !many;
-  const rec = many ? recentServices() : [], cur = sById(S.formService);
-  let list = many ? rec : all;
-  if (many && cur && !rec.includes(cur)) list = [cur].concat(rec.slice(0, 7));
-  if (many && document.activeElement !== $('n-serv')) $('n-serv').value = '';
-  box.innerHTML = (many && list.length ? '<span class="chips-lbl">' + (rec.length ? 'Recenti' : 'Scelto') + '</span>' : '') +
-    list.map(s => '<button type="button" class="chip" role="radio" title="' + esc((s.codice ? s.codice + ' · ' : '') + s.nome) + '" aria-checked="' + (s.id === S.formService) + '" data-id="' + esc(s.id) + '"><span class="cn">' + esc(s.nome) + '</span><small>' + esc(s.codice || unitLbl(s.unita)) + '</small></button>').join('');
+  const many = all.length > MANY, cur = sById(S.formService), inp = $('n-serv');
+  $('n-sbox').hidden = !many; box.hidden = many;
+  if (many) {
+    inp.classList.toggle('picked', !!cur);
+    if (cur && document.activeElement !== inp) inp.value = cur.nome + (cur.codice ? ' (' + cur.codice + ')' : '');
+    if (!cur && document.activeElement !== inp) inp.value = '';
+    box.innerHTML = ''; return;
+  }
+  box.innerHTML = all.map(s => '<button type="button" class="chip" role="radio" title="' + esc((s.codice ? s.codice + ' · ' : '') + s.nome) + '" aria-checked="' + (s.id === S.formService) + '" data-id="' + esc(s.id) + '"><span class="cn">' + esc(s.nome) + '</span><small>' + esc(s.codice || unitLbl(s.unita)) + '</small></button>').join('');
 }
 function pickService(id) {
   const s = sById(id); if (!s) return;
@@ -659,27 +662,34 @@ function pickService(id) {
   if (u === 'numero' && !Number(s.tariffa)) u = 'importo'; // a unità senza prezzo: si scrive l'importo
   setUnit(u);
   if (u === 'numero' && !$('n-qta').value.trim()) $('n-qta').value = '1';
-  $('n-serv').value = ''; renderSCombo(false);
+  renderSCombo(false);
+  $('n-serv').value = s.nome + (s.codice ? ' (' + s.codice + ')' : '');
   renderChips(); updateCalc(); $('n-qta').focus(); $('n-qta').select();
 }
 $('n-servizi').addEventListener('click', e => { const b = e.target.closest('.chip'); if (b) pickService(b.dataset.id); });
+function sQuery() { return S.formService ? '' : $('n-serv').value.trim().toLowerCase(); } // con un servizio scelto il menu riparte dall'elenco completo
 function sMatches() {
-  const q = $('n-serv').value.trim().toLowerCase();
-  return S.servizi.filter(s => s.attivo !== false && (!q || (s.nome || '').toLowerCase().includes(q) || (s.codice || '').toLowerCase().includes(q)))
-    .sort((a, b) => q ? ((b.codice || '').toLowerCase().startsWith(q) - (a.codice || '').toLowerCase().startsWith(q)) : 0).slice(0, 12);
+  const q = sQuery(), act = S.servizi.filter(s => s.attivo !== false);
+  if (!q) { const rec = recentServices().slice(0, 6); S.sRecN = rec.length; return rec.concat(act.filter(s => !rec.includes(s))); }
+  S.sRecN = 0;
+  return act.filter(s => (s.nome || '').toLowerCase().includes(q) || (s.codice || '').toLowerCase().includes(q))
+    .sort((a, b) => (b.codice || '').toLowerCase().startsWith(q) - (a.codice || '').toLowerCase().startsWith(q)).slice(0, 15);
 }
 function renderSCombo(open) {
   const ul = $('n-slist'), inp = $('n-serv');
   if (!open) { ul.hidden = true; inp.setAttribute('aria-expanded', 'false'); return; }
   const m = sMatches(); if (S.sIdx >= m.length) S.sIdx = 0;
-  ul.innerHTML = m.length ? m.map((s, i) => '<li role="option" data-id="' + esc(s.id) + '" aria-selected="' + (i === S.sIdx) + '"><span>' + esc(s.nome) + '</span><small>' + esc(svcSub(s)) + '</small></li>').join('') : '<li class="none">Nessun servizio trovato</li>';
+  const hdr = t => '<li class="hdr" role="presentation">' + t + '</li>';
+  ul.innerHTML = m.length ? m.map((s, i) => (S.sRecN && i === 0 ? hdr('Usati di recente') : '') + (S.sRecN && i === S.sRecN ? hdr('Tutti i servizi') : '') +
+    '<li role="option" data-id="' + esc(s.id) + '" aria-selected="' + (i === S.sIdx) + '"><span>' + esc(s.nome) + '</span><small>' + esc(svcSub(s)) + '</small></li>').join('') : '<li class="none">Nessun servizio trovato</li>';
+  const selLi = ul.querySelector('li[aria-selected="true"]'); if (selLi) selLi.scrollIntoView({block: 'nearest'});
   ul.hidden = false; inp.setAttribute('aria-expanded', 'true');
 }
 S.sIdx = 0;
 const nSrv = $('n-serv');
-nSrv.addEventListener('input', () => { S.sIdx = 0; renderSCombo(true); });
-nSrv.addEventListener('focus', () => renderSCombo(true));
-nSrv.addEventListener('blur', () => setTimeout(() => renderSCombo(false), 120));
+nSrv.addEventListener('input', () => { if (S.formService) { S.formService = null; nSrv.classList.remove('picked'); updateCalc(); renderLines(); } S.sIdx = 0; renderSCombo(true); });
+nSrv.addEventListener('focus', () => { S.sIdx = S.formService ? Math.max(0, sMatches().findIndex(x => x.id === S.formService)) : 0; renderSCombo(true); if (S.formService) setTimeout(() => nSrv.select(), 0); });
+nSrv.addEventListener('blur', () => setTimeout(() => { if (document.activeElement === nSrv) return; renderSCombo(false); renderChips(); }, 120));
 nSrv.addEventListener('keydown', e => {
   const open = !$('n-slist').hidden, m = sMatches(), n = Math.max(m.length, 1);
   if (e.key === 'ArrowDown') { e.preventDefault(); if (!open) renderSCombo(true); else { S.sIdx = (S.sIdx + 1) % n; renderSCombo(true); } }
@@ -733,7 +743,7 @@ function resolveClientText() {
 const nCli = $('n-cliente');
 nCli.addEventListener('input', () => { S.formClient = null; S.comboIdx = 0; renderCombo(true); renderSide(); });
 nCli.addEventListener('focus', () => { if (!S.formClient) renderCombo(true); });
-nCli.addEventListener('blur', () => setTimeout(() => { renderCombo(false); resolveClientText(); }, 120));
+nCli.addEventListener('blur', () => setTimeout(() => { if (document.activeElement === nCli) return; renderCombo(false); resolveClientText(); }, 120));
 nCli.addEventListener('keydown', e => {
   const open = !$('n-list').hidden, m = comboMatches();
   if (e.key === 'ArrowDown') { e.preventDefault(); if (!open) renderCombo(true); else { S.comboIdx = (S.comboIdx + 1) % Math.max(m.length, 1); renderCombo(true); } }
@@ -762,7 +772,7 @@ function lineCalc(l, c) {
   else o.importo = l.q;
   return o;
 }
-function clearServiceInputs() { $('n-qta').value = ''; $('n-note').value = ''; S.formService = null; renderChips(); updateCalc(); }
+function clearServiceInputs() { $('n-qta').value = ''; $('n-note').value = ''; S.formService = null; $('n-serv').value = ''; $('n-serv').classList.remove('picked'); renderChips(); updateCalc(); }
 function focusService() { const first = $('n-servizi').querySelector('.chip'); if (!$('n-sbox').hidden) $('n-serv').focus(); else if (first) first.focus(); }
 function renderLines() {
   const box = $('n-lines'), c = cById(S.formClient);
