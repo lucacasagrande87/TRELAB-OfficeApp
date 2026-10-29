@@ -725,8 +725,8 @@ $('n-slist').addEventListener('mousedown', e => { const li = e.target.closest('l
 $('n-unit').addEventListener('click', e => { const b = e.target.closest('button[data-u]'); if (b) setUnit(b.dataset.u); });
 $('n-qta').addEventListener('input', updateCalc);
 
-/* operatore: menu a tendina, il browser ricorda l'ultima scelta */
-S.formOper = lsGet('rapportini-operatore') || '';
+/* operatore: menu a tendina, da scegliere a ogni rapportino */
+S.formOper = '';
 function renderOper() {
   const sel = $('n-oper'), act = S.operatori.filter(o => o.attivo !== false);
   $('n-oper-box').hidden = S.loaded.o && !act.length;
@@ -735,7 +735,7 @@ function renderOper() {
   if (sel.dataset.h !== html) { sel.innerHTML = html; sel.dataset.h = html; }
   sel.value = S.formOper;
 }
-$('n-oper').addEventListener('change', e => { S.formOper = e.target.value; lsSet('rapportini-operatore', S.formOper); showErr('n-err', ''); });
+$('n-oper').addEventListener('change', e => { S.formOper = e.target.value; showErr('n-err', ''); });
 
 /* combobox cliente */
 function comboMatches() {
@@ -766,7 +766,16 @@ function resolveClientText() {
 }
 const nCli = $('n-cliente');
 nCli.addEventListener('input', () => { S.formClient = null; S.comboIdx = 0; renderCombo(true); renderSide(); });
-nCli.addEventListener('focus', () => { if (!S.formClient) renderCombo(true); });
+nCli.addEventListener('focus', () => { if (!S.formClient && !S.cQuiet) renderCombo(true); });
+// dopo la registrazione il modulo riparte pulito, operatore compreso
+function resetNewForm() {
+  S.formOper = ''; $('n-oper').value = ''; renderOper();
+  S.formClient = null; nCli.value = ''; renderCombo(false);
+  $('n-data').value = todayStr();
+  clearServiceInputs(); setUnit('ore'); showErr('n-err', '');
+  renderSide(); renderLines();
+  S.cQuiet = true; nCli.focus(); S.cQuiet = false;
+}
 nCli.addEventListener('blur', () => setTimeout(() => { if (document.activeElement === nCli) return; renderCombo(false); resolveClientText(); }, 120));
 nCli.addEventListener('keydown', e => {
   const open = !$('n-list').hidden, m = comboMatches();
@@ -848,7 +857,7 @@ $('f-new').addEventListener('submit', async e => {
     for (const d of docs) { await db.collection('rapportini').doc().set(d); saved++; }
     if (docs.length === 1) { const d = docs[0]; toast('Registrato: ' + c.nome + ' · ' + d.servizioNome + ' · ' + (d.unita === 'importo' ? eurFmt.format(d.importo) : fmtQty(d) + (d.importo != null ? ' = ' + eurFmt.format(d.importo) : ''))); }
     else toast('Registrato: ' + c.nome + ' · ' + plural(docs.length, 'servizio', 'servizi') + ' · ' + eurFmt.format(round2(docs.reduce((a, d) => a + (d.importo || 0), 0))));
-    S.lines = []; clearServiceInputs(); renderSide(); focusService();
+    S.lines = []; resetNewForm();
   } catch (err) {
     // tiene in elenco solo le righe non salvate, così si può riprovare senza doppioni
     S.lines = lines.slice(saved); clearServiceInputs();
